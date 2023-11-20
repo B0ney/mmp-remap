@@ -11,6 +11,7 @@ from pathlib import Path
 # XPATH syntax to select all xml elements that have the "src" attribute.
 SRC_XPATH = ".//*[@src]"
 
+VESTIGE_XPATH = ".//*vestige"
 
 # Allowed extensions
 AUDIO_EXT = ["wav", "ogg", "flac", "aiff"]
@@ -21,7 +22,7 @@ SOUNDFONT_EXT = ["sf2", "sf3"]
 USER_PROJECTS = "userprojects"
 USER_SAMPLE = "usersample"
 USER_SOUNDFONT = "usersoundfont"
-
+USER_VST = "uservst"
 
 
 def read_xml(path: str) -> ET.ElementTree:
@@ -78,6 +79,10 @@ def append_to_or_update(key: str, value: ET.Element, dict: Dict[str, List[ET.Ele
 
 for i, e in enumerate(mmp.iterfind(SRC_XPATH)):
     append_to_or_update(e.attrib["src"], e, dataset)
+
+
+for i, e in enumerate(mmp.iterfind(VESTIGE_XPATH)):
+    append_to_or_update(e.attrib["plugin"], e, dataset)
 
 
 for k, v in dataset.items():

@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from dataclasses import dataclass
 import xml.etree.ElementTree as ET
 import zlib
 
@@ -7,16 +8,15 @@ from typing import Dict, List, Optional
 from pathlib import Path
 
 
-
 # XPATH syntax to select all xml elements that have the "src" attribute.
 SRC_XPATH = ".//*[@src]"
+VESTIGE_XPATH = "//vestige"
 
-VESTIGE_XPATH = ".//*vestige"
 
 # Allowed extensions
-AUDIO_EXT = ["wav", "ogg", "flac", "aiff"]
+AUDIO_EXT = ["wav", "ogg", "flac", "aiff", "ds", "spx", "voc", "aif", "au"]
 SOUNDFONT_EXT = ["sf2", "sf3"]
-
+VST_EXT = ["dll", "exe"]
 
 
 USER_PROJECTS = "userprojects"
@@ -64,34 +64,77 @@ def get_lmmsrc_paths(path: Path | str) -> Optional[Dict[str, str]]:
         return paths.attrib
 
 
+@dataclass
+class Mapper:
+    attrib: str
+    elem: ET.Element
 
-mmp = read_xml("./cyberpunk-18.mmp")
+    def update(self, value: str):
+        self.elem.attrib[self.attrib] = value
 
-dataset: Dict[str, List[ET.Element]] = {}
+    def get(self) -> str:
+        return self.elem.attrib[self.attrib]
+    
+    def name(self) -> str:
+        return self.elem.tag
 
 
-def append_to_or_update(key: str, value: ET.Element, dict: Dict[str, List[ET.Element]]):
+mmp = read_xml("./slicerT.mmpz")
+
+dataset: Dict[str, List[Mapper]] = {}
+
+
+def append_to_or_update(value: Mapper, dict: Dict[str, List[Mapper]]):
+    key = value.get()
     if dict.get(key) is None:
         dict[key] = [value]
     else:
         dict[key].append(value)
 
+    
+def remap(key: str, new_value: str, dataset: Dict[str, List[Mapper]]):
+    mappers = dataset.get(key)
 
-for i, e in enumerate(mmp.iterfind(SRC_XPATH)):
-    append_to_or_update(e.attrib["src"], e, dataset)
+    if mappers is None:
+        print(f"key '{key}' not found")
+        return
+    
+    for elem in mappers:
+        elem.update(new_value)
 
 
-for i, e in enumerate(mmp.iterfind(VESTIGE_XPATH)):
-    append_to_or_update(e.attrib["plugin"], e, dataset)
+def allowed_extensions(ext: str) -> Optional[List[str]]:
+    filters = [
+        AUDIO_EXT,
+        SOUNDFONT_EXT,
+        VST_EXT,
+    ]
+
+    for filter in filters:
+        if ext in filter:
+            return filter
+
+    return None
+
+
+for e in mmp.iterfind(SRC_XPATH):
+    append_to_or_update(Mapper("src", e), dataset)
+
+
+for e in mmp.iterfind(VESTIGE_XPATH):
+    append_to_or_update(Mapper("plugin", e), dataset)
 
 
 for k, v in dataset.items():
-    print(k, "\n    - references:", len(v), "\n")
+    print(k, )
+    for elem in v:
+        print(f"        * {elem.name()}")
+    print()
+
 
 # replace attribute
-# for e in dataset["usersample:test.flac"]:
-#     e.attrib["src"] = "usersample:test2.flac"
-
+# for e in dataset["userprojects:cyberpunk/resources/Loop funk-7.wav"]:
+#     e.update("usersample:test2.flac")
 
 # write xml back to file
 mmp.write("test.mmp")
@@ -104,7 +147,6 @@ a = get_lmmsrc_paths(lmmsrc_path())
 if a is not None:
     for k,v in a.items():
         print(k, v) 
-
 
 
 def main():

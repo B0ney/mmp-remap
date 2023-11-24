@@ -1,17 +1,13 @@
 #!/usr/bin/env python
 
 import argparse as arg
+import sys
 import xml.etree.ElementTree as ET
 import zlib
 
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 from pathlib import Path
-
-
-# XPATH syntax to select all xml elements that have the "src" attribute.
-SRC_XPATH = ".//*[@src]"
-VESTIGE_XPATH = ".//vestige"
 
 
 # Allowed extensions
@@ -24,6 +20,17 @@ USER_PROJECTS = "userprojects"
 USER_SAMPLE = "usersample"
 USER_SOUNDFONT = "usersoundfont"
 USER_VST = "uservst"
+
+
+# XPATH syntax to select all xml elements that have the "src" attribute.
+SRC_XPATH = ".//*[@src]"
+VESTIGE_XPATH = ".//vestige"
+
+
+XPATH_ATTRS = [
+    (SRC_XPATH, "src"),
+    (VESTIGE_XPATH, "plugin")
+]
 
 
 def read_xml(path: str) -> ET.ElementTree:
@@ -79,19 +86,22 @@ class LMMSRC:
             
             return paths.attrib
     
-    
-    def expand_alias(self, path: str) -> str:
-        ''' Expand shorthand paths used in lmms project files.
-        
-            E.g. ``usersample:brownnoise.ogg`` -> ``C:\\Users\\yourname\\LMMS\\samples\\brownnoise.ogg`` 
-        '''
 
+    def aliases(self) -> Dict[str, Path]:
         aliases = {
             USER_PROJECTS: self.projects_dir,
             USER_SAMPLE: self.samples_dir,
             USER_SOUNDFONT: self.sf2_dir,
             USER_VST: self.vst_dir,
         }
+        
+        return aliases
+    
+    def expand_alias(self, path: str) -> str:
+        ''' Expand shorthand paths used in lmms project files.
+
+            E.g. ``usersample:brownnoise.ogg`` -> ``C:\\Users\\yourname\\LMMS\\samples\\brownnoise.ogg`` 
+        '''
 
         split_path = path.split(":", 1)
 
@@ -101,12 +111,22 @@ class LMMSRC:
         alias = split_path[0]
         resource = split_path[1]
 
-        expanded = aliases.get(alias)
+        expanded = self.aliases().get(alias)
+
         if expanded is None:
             print(f"Unknown alias '{alias}'")
             return path
         
         return str(expanded.joinpath(resource))
+    
+    
+    # TODO
+    def shorten(self, path: str) -> str:
+        for (alias, expanded) in self.aliases().items():
+            if path.startswith(str(expanded)):
+                return path.replace(str(expanded), alias, 1)
+        
+        return path
                 
 
 @dataclass
@@ -124,6 +144,20 @@ class Mapper:
         return self.elem.tag
 
 
+def get_allowed_extensions(ext: str) -> Optional[List[str]]:
+    filters = [
+        AUDIO_EXT,
+        SOUNDFONT_EXT,
+        VST_EXT,
+    ]
+
+    for filter in filters:
+        if ext in filter:
+            return filter
+
+    return None
+
+
 def append_to_or_update(value: Mapper, dict: Dict[str, List[Mapper]]):
     key = value.get()
     
@@ -137,6 +171,20 @@ def append_to_or_update(value: Mapper, dict: Dict[str, List[Mapper]]):
 
     
 def remap(key: str, new_value: str, dataset: Dict[str, List[Mapper]]):
+    ''' Remaps a given resource in the dataset '''
+
+    allowed_extensions = get_allowed_extensions(get_ext(key))
+
+    if allowed_extensions is None:
+        print("Could not find allowed extension")
+        return
+    
+    extension = get_ext(new_value)
+    
+    if extension not in allowed_extensions:
+        print(f"resource can not be a '{extension}'")
+        return
+
     mappers = dataset.get(key)
 
     if mappers is None:
@@ -147,46 +195,40 @@ def remap(key: str, new_value: str, dataset: Dict[str, List[Mapper]]):
         elem.update(new_value)
 
 
-def allowed_extensions(ext: str) -> Optional[List[str]]:
-    filters = [
-        AUDIO_EXT,
-        SOUNDFONT_EXT,
-        VST_EXT,
-    ]
-
-    for filter in filters:
-        if ext in filter:
-            return filter
-
-    return None
+def get_ext(path: str) -> str:
+    return Path(path).suffix.strip('.')
 
 def estimate_new_path(path: str, lmmsrc: LMMSRC):
     pass
 
 
-mmp = read_xml("./slicerT.mmp")
+def is_path_in_lmmsrc(lmmsrc: LMMSRC, path: str) -> bool:
+    path = lmmsrc.expand_alias(path)
+    
+    # return Path(path).resolve() in [lmmsrc.sf2_dir.parents]
+    return False
+
+
+mmp = read_xml("./test/80's.mmpz")
 
 dataset: Dict[str, List[Mapper]] = {}
 
-g = [
-    (SRC_XPATH, "src"),
-    (VESTIGE_XPATH, "plugin")
-]
 
-for (xpath, attrib) in g:
+# build mapping
+for (xpath, attrib) in XPATH_ATTRS:
     for elem in mmp.iterfind(xpath):
         append_to_or_update(Mapper(attrib, elem), dataset)
 
 
-for k, v in dataset.items():
-    print(k, )
+
+for i, (k, v) in enumerate(dataset.items()):
+    print(f"[{i}]", k)
     for elem in v:
         print(f"        * {elem.name()}")
     print()
 
-# replace attribute
-# for e in dataset["userprojects:cyberpunk/resources/Loop funk-7.wav"]:
-#     e.update("usersample:test2.flac")
+
+remap("uiui", "arg.wav", dataset)
 
 # write xml back to file
 mmp.write("test.mmp")
@@ -200,6 +242,15 @@ print(lmmsrc.expand_alias("usersoundfont:FluidR3_GM.sf2"))
 
 
 
+
+def validate_cli(cli: arg.Namespace):
+    if cli.c is not None:
+        if not Path(cli.c).exists():
+            print("ERROR: lmmsrc path override does not exist")
+            sys.exit(1)
+    
+    pass
+
 def main():
     parser = arg.ArgumentParser()
     
@@ -210,7 +261,21 @@ def main():
 
     cli = parser.parse_args()
 
-    cli.c
+    validate_cli(cli)
+
+
+    config = lmmsrc_path()
+
+    if cli.c is not None:
+        config = Path(cli.c)
+
+    if not config.exists():
+        print("ERROR: could not find .lmmsrc.xml in your user directory")
+        sys.exit(1)
+    
+
+    lmmsrc = LMMSRC(config)
+    
 
     pass
 

@@ -202,10 +202,9 @@ class Remapper:
 
     dataset: Dict[str, List[Instrument]]
 
-    def __init__(self) -> None:
+    def __init__(self, mmp: ET.ElementTree) -> None:
         self.dataset = {}
 
-    def build_mapping(self, mmp: ET.ElementTree):
         for xpath, attrib in XPATH_ATTRS:
             for elem in mmp.iterfind(xpath):
                 self.append_or_update(Instrument(attrib, elem))
@@ -287,9 +286,7 @@ def main(argv: List[str]):
 
     mmp = read_xml("./test/80's.mmpz")
 
-    remapper = Remapper()
-
-    remapper.build_mapping(mmp)
+    remapper = Remapper(mmp)
 
     remapper.list_mappings()
 

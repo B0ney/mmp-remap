@@ -208,7 +208,7 @@ class Remapper:
 
     dataset: Dict[str, List[Instrument]]
 
-    def __init__(self, mmp: ET.ElementTree) -> None:
+    def __init__(self, mmp: ET.ElementTree):
         self.dataset = {}
 
         for xpath, attrib in XPATH_ATTRS:
@@ -262,7 +262,7 @@ def remap_index(remapper: Remapper, index: int, new_resource: str):
 
 
 def remap_match(remapper: Remapper, to_match: str, replace: str):
-    """Finds and replaces all matching strings in the resource"""
+    """Finds and replaces all matching strings for all resources"""
 
     for resource in remapper.dataset.keys():
         if to_match in resource:
@@ -271,13 +271,23 @@ def remap_match(remapper: Remapper, to_match: str, replace: str):
 
 
 def remap_regex(remapper: Remapper, pattern: str, replace: str):
-    """Use regex to replace a pattern in a resource"""
+    """Use regex to replace a pattern for all resources"""
 
     for resource in remapper.dataset.keys():
         new_resource = re.sub(pattern, replace, resource)
 
         if new_resource != resource:
             remapper.remap_resource(resource, new_resource)
+
+# TODO
+def alias_resources(remapper: Remapper, lmmsrc: LMMSRC):
+    """Replace absolute paths for all resources with aliases specified by lmmsrc"""
+
+    for resource in remapper.dataset.keys():
+        aliased_res = lmmsrc.shorten(resource)
+
+        if aliased_res != resource:
+            remapper.remap_resource(resource, aliased_res)
 
 
 def get_file_ext(path: str) -> str:
@@ -322,9 +332,10 @@ def main(argv: List[str]):
 
     remapper.list_mappings()
 
+    # remap_match()
 
     print("Writing out lmms file...")
-    mmp.write("test.mmp")
+    # mmp.write("test.mmp")
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import argparse as arg
+import re
 import sys
 import xml.etree.ElementTree as ET
 import zlib
@@ -28,10 +29,10 @@ USER_VST = "uservst"
 
 
 # XPATH syntax to select all xml elements that have the "src" attribute.
-SRC_XPATH = ".//*[@src]"
-VESTIGE_XPATH = ".//vestige"
+SRC_XPATH = (".//*[@src]", "src")
+VESTIGE_XPATH = (".//vestige", "plugin")
 
-XPATH_ATTRS = [(SRC_XPATH, "src"), (VESTIGE_XPATH, "plugin")]
+XPATH_ATTRS = [SRC_XPATH, VESTIGE_XPATH]
 
 
 def read_xml(path: str) -> ET.ElementTree:
@@ -190,7 +191,7 @@ def extension_is_allowed(
     allowed_extensions = get_allowed_extensions(get_file_ext(old_resource))
 
     if allowed_extensions is None:
-        print("ERROR: Could not find allowed extension")
+        print("ERROR: Could not find allowed extension for ", old_resource)
         return False
 
     extension = get_file_ext(new_resource)
@@ -253,8 +254,34 @@ class Remapper:
             instrument.update_resource(new_resource)
 
 
+def remap_index(remapper: Remapper, index: int, new_resource: str):
+    """Remaps a single resource from a given index"""
+
+    resource = list(remapper.dataset.keys())[index]
+    remapper.remap_resource(resource, new_resource)
+
+
+def remap_match(remapper: Remapper, to_match: str, replace: str):
+    """Finds and replaces all matching strings in the resource"""
+
+    for resource in remapper.dataset.keys():
+        if to_match in resource:
+            new_resource = resource.replace(to_match, replace)
+            remapper.remap_resource(resource, new_resource)
+
+
+def remap_regex(remapper: Remapper, pattern: str, replace: str):
+    """Use regex to replace a pattern in a resource"""
+
+    for resource in remapper.dataset.keys():
+        new_resource = re.sub(pattern, replace, resource)
+
+        if new_resource != resource:
+            remapper.remap_resource(resource, new_resource)
+
+
 def get_file_ext(path: str) -> str:
-    return Path(path).suffix.strip(".")
+    return Path(path).suffix.strip(".").lower()
 
 
 def validate_cli(cli: arg.Namespace):
@@ -295,8 +322,6 @@ def main(argv: List[str]):
 
     remapper.list_mappings()
 
-    # test
-    remapper.remap_resource("drumsynth/effects/Cicada.ds", "kick.wav")
 
     print("Writing out lmms file...")
     mmp.write("test.mmp")

@@ -49,6 +49,24 @@ def read_xml(path: str) -> ET.ElementTree:
             return ET.parse(path)
 
 
+def write_mmp(xml: ET.ElementTree, path: str):
+    """Output mmp xml data to a file.
+    Will compress if the file extension is .mmpz
+    """
+
+    extension = get_file_ext(path)
+
+    if extension == "mmpz":
+        with open(path, "wb") as file:
+            data = ET.tostring(xml.getroot())
+            size = int.to_bytes(len(data), 4, byteorder="little")
+
+            file.write(size)
+            file.write(zlib.compress(data))
+    else:
+        xml.write(path, encoding="UTF-8")
+
+
 # TODO: what if the user doesn't have an lmmsrc file?
 class LMMSRC:
     """Uses your ``.lmmsrc.xml`` file to validate and shorten resources added by the user.
@@ -369,7 +387,6 @@ def main(argv: List[str]):
 
     cli = validate_cli(parser.parse_args())
 
-
     config = LMMSRC.default_path()
 
     if cli.config is not None:
@@ -387,12 +404,8 @@ def main(argv: List[str]):
 
     remapper.list_mappings()
 
-    # remap_match()
-
-    remapper.list_mappings()
-
     print("Writing out lmms file...")
-    mmp.write("test.mmp")
+    write_mmp(mmp, "test.mmpz")
 
 
 if __name__ == "__main__":

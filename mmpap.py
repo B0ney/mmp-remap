@@ -27,7 +27,6 @@ USER_SAMPLE = "usersample"
 USER_SOUNDFONT = "usersoundfont"
 USER_VST = "uservst"
 
-
 # XPATH syntax to select all xml elements that have the "src" attribute.
 SRC_XPATH = (".//*[@src]", "src")
 VESTIGE_XPATH = (".//vestige", "plugin")
@@ -128,7 +127,7 @@ class LMMSRC:
         return str(expanded.joinpath(resource))
 
     # TODO
-    def shorten(self, path: str) -> str:
+    def shorten_path(self, path: str) -> str:
         for alias, expanded in self.aliases().items():
             if path.startswith(str(expanded)):
                 return path.replace(str(expanded), alias, 1)
@@ -136,7 +135,7 @@ class LMMSRC:
         return path
 
     # TODO
-    def is_path_in_lmmsrc(self, path: str) -> bool:
+    def path_in_lmmsrc(self, path: str) -> bool:
         path = self.expand_alias(path)
 
         # return Path(path).resolve() in [lmmsrc.sf2_dir.parents]
@@ -206,14 +205,24 @@ def extension_is_allowed(
 class Remapper:
     """Remaps resources in LMMS projects"""
 
-    dataset: Dict[str, List[Instrument]]
+    __dataset: Dict[str, List[Instrument]]
 
     def __init__(self, mmp: ET.ElementTree):
-        self.dataset = {}
+        self.__dataset = {}
 
         for xpath, attrib in XPATH_ATTRS:
             for elem in mmp.iterfind(xpath):
                 self.append_or_update(Instrument(attrib, elem))
+
+    def get_resources(self) -> List[str]:
+        """Returns a list of all the re-mappable resources"""
+
+        return list(self.__dataset.keys())
+
+    def get_resource(self, index: int) -> str:
+        """Provides a resource given an index"""
+
+        return self.get_resources()[index]
 
     def append_or_update(self, instr: Instrument):
         resource = instr.get_resource()
@@ -223,15 +232,15 @@ class Remapper:
         if resource == "":
             return
 
-        if self.dataset.get(resource) is None:
-            self.dataset[resource] = [instr]
+        if self.__dataset.get(resource) is None:
+            self.__dataset[resource] = [instr]
         else:
-            self.dataset[resource].append(instr)
+            self.__dataset[resource].append(instr)
 
     def list_mappings(self):
         """List all of the resources and its associated instruments"""
 
-        for index, (resource, instruments) in enumerate(self.dataset.items()):
+        for index, (resource, instruments) in enumerate(self.__dataset.items()):
             print(f"[{index}]", resource)
 
             for instrument in instruments:
@@ -244,27 +253,39 @@ class Remapper:
         if not extension_is_allowed(resource, new_resource):
             return
 
-        instruments = self.dataset.get(resource)
+        instruments = self.__dataset.get(resource)
 
         if instruments is None:
-            print(f"key '{resource}' not found")
+            print(f"ERROR: key '{resource}' not found")
             return
 
         for instrument in instruments:
             instrument.update_resource(new_resource)
 
+        # Use updated resource as the new key.
+        #
+        # TODO: Modifying the dictionary keys while
+        #       it is being iterated will cause an exception.
+        #
+        #       As a result, the dataset is made private
+        #       to avoid calling .keys() directly. (use get_resources())
+        #
+        #       ...Is there a better way to approach this?
+        #
+        self.__dataset[new_resource] = self.__dataset.pop(resource)
+
 
 def remap_index(remapper: Remapper, index: int, new_resource: str):
     """Remaps a single resource from a given index"""
 
-    resource = list(remapper.dataset.keys())[index]
+    resource = remapper.get_resource(index)
     remapper.remap_resource(resource, new_resource)
 
 
 def remap_match(remapper: Remapper, to_match: str, replace: str):
     """Finds and replaces all matching strings for all resources"""
 
-    for resource in remapper.dataset.keys():
+    for resource in remapper.get_resources():
         if to_match in resource:
             new_resource = resource.replace(to_match, replace)
             remapper.remap_resource(resource, new_resource)
@@ -273,18 +294,19 @@ def remap_match(remapper: Remapper, to_match: str, replace: str):
 def remap_regex(remapper: Remapper, pattern: str, replace: str):
     """Use regex to replace a pattern for all resources"""
 
-    for resource in remapper.dataset.keys():
+    for resource in remapper.get_resources():
         new_resource = re.sub(pattern, replace, resource)
 
         if new_resource != resource:
             remapper.remap_resource(resource, new_resource)
 
+
 # TODO
 def alias_resources(remapper: Remapper, lmmsrc: LMMSRC):
     """Replace absolute paths for all resources with aliases specified by lmmsrc"""
 
-    for resource in remapper.dataset.keys():
-        aliased_res = lmmsrc.shorten(resource)
+    for resource in remapper.get_resources():
+        aliased_res = lmmsrc.shorten_path(resource)
 
         if aliased_res != resource:
             remapper.remap_resource(resource, aliased_res)
@@ -294,31 +316,64 @@ def get_file_ext(path: str) -> str:
     return Path(path).suffix.strip(".").lower()
 
 
-def validate_cli(cli: arg.Namespace):
-    if cli.c is not None:
-        if not Path(cli.c).exists():
+def validate_cli(cli: arg.Namespace) -> arg.Namespace:
+    if cli.config is not None:
+        if not Path(cli.config).exists():
             print("ERROR: lmmsrc path override does not exist")
             sys.exit(1)
 
-    pass
+    return cli
 
 
 def main(argv: List[str]):
-    # parser = arg.ArgumentParser()
+    parser = arg.ArgumentParser()
 
-    # parser.add_argument("-c",
-    #     default=None,
-    #     help="Override default lmmsrc path file"
-    # )
+    parser.add_argument("-c", "--config", help="Override default lmmsrc path file")
 
-    # cli = parser.parse_args()
+    parser.add_argument(
+        "-a",
+        "--auto",
+        help="Automatically alias absolute paths if they can be located with lmmsrc",
+        action="store_true",
+    )
 
-    # validate_cli(cli)
+    subparsers = parser.add_subparsers(
+        title="subcommands",
+        description="valid subcommands",
+        help="additional help",
+        required=False,
+    )
+
+    # create parser for the --match command
+    parser_match = subparsers.add_parser(
+        "match", help="Re-map project resources with string matching"
+    )
+    parser_match.add_argument(
+        "-o", "--out", help="Specify the output file", required=True
+    )
+
+    # create parser for the --reg command
+    parser_re = subparsers.add_parser(
+        "re", help="Re-map project resources with regular expressions"
+    )
+    parser_re.add_argument("-o", "--out", help="Specify the output file", required=True)
+
+    # parser_list = subparsers.add_parser("list",
+    #     help="List all of the resources and its associated instruments",
+
+    parser.add_argument(
+        "--list",
+        help="List all of the resources and its associated instruments",
+        action="store_true",
+    )
+
+    cli = validate_cli(parser.parse_args())
+
 
     config = LMMSRC.default_path()
 
-    # if cli.c is not None:
-    #     config = Path(cli.c)
+    if cli.config is not None:
+        config = Path(cli.config)
 
     if not config.exists():
         print("ERROR: could not find .lmmsrc.xml in your user directory")
@@ -334,8 +389,10 @@ def main(argv: List[str]):
 
     # remap_match()
 
+    remapper.list_mappings()
+
     print("Writing out lmms file...")
-    # mmp.write("test.mmp")
+    mmp.write("test.mmp")
 
 
 if __name__ == "__main__":

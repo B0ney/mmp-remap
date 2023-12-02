@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Copyright (c) 2023 B0ney
 # This Source Code Form is subject to the terms of the Mozilla Public
@@ -96,7 +96,7 @@ class LMMSRC:
         return Path.home().joinpath(".lmmsrc.xml")
 
     @staticmethod
-    def get_lmmsrc_paths(path: Path | str) -> Optional[Dict[str, str]]:
+    def get_lmmsrc_paths(path) -> Optional[Dict[str, str]]:
         """Get attributes from "Paths" tag in ``lmmsrc`` as a dictionary"""
 
         with open(path, "rb") as file:
@@ -261,9 +261,11 @@ class Remapper:
         for index, (resource, instruments) in enumerate(self.__dataset.items()):
             print(f"[{index}]", resource)
 
-            for instrument in instruments:
-                print(f"        * {instrument.name()}")
-            print()
+            plural = ""
+            if len(instruments) > 1:
+                plural = "S"
+            print(f"        {len(instruments)} - REFERENCE{plural}\n")
+
 
     def remap_resource(self, resource: str, new_resource: str):
         """Remaps a given resource in the dataset"""
@@ -281,15 +283,6 @@ class Remapper:
             instrument.update_resource(new_resource)
 
         # Use updated resource as the new key.
-        #
-        # TODO: Modifying the dictionary keys while
-        #       it is being iterated will cause an exception.
-        #
-        #       As a result, the dataset is made private
-        #       to avoid calling .keys() directly. (use get_resources())
-        #
-        #       ...Is there a better way to approach this?
-        #
         self.__dataset[new_resource] = self.__dataset.pop(resource)
 
 
@@ -335,6 +328,10 @@ def get_file_ext(path: str) -> str:
 
 
 def validate_cli(cli: arg.Namespace) -> arg.Namespace:
+    if not cli.path.exists():
+        print(f"ERROR: path '{cli.path}' file does not exist")
+        sys.exit(1)
+
     if cli.config is not None:
         if not Path(cli.config).exists():
             print("ERROR: lmmsrc path override does not exist")
@@ -343,70 +340,103 @@ def validate_cli(cli: arg.Namespace) -> arg.Namespace:
     return cli
 
 
-def main(argv: List[str]):
+def build_cli() -> arg.Namespace:
     parser = arg.ArgumentParser()
 
+    parser.add_argument("path", type=Path, help="Path to LMMS project file")
     parser.add_argument("-c", "--config", help="Override default lmmsrc path file")
-
+    # parser.add_argument(
+    #     "-p",
+    #     "--preserve",
+    #     help="Preserve file metadata in mmp",
+    #     action="store_true"
+    # )
     parser.add_argument(
         "-a",
         "--auto",
         help="Automatically alias absolute paths if they can be located with lmmsrc",
         action="store_true",
+        default=False,
     )
 
     subparsers = parser.add_subparsers(
         title="subcommands",
-        description="valid subcommands",
+        description="For when you need to do something quick",
         help="additional help",
         required=False,
+        dest="mode",
     )
 
-    # create parser for the --match command
+    # create parser for the "match" subcommand
     parser_match = subparsers.add_parser(
         "match", help="Re-map project resources with string matching"
     )
+    parser_match.add_argument("match", type=str)
+    parser_match.add_argument("replace", type=str)
     parser_match.add_argument(
         "-o", "--out", help="Specify the output file", required=True
     )
 
-    # create parser for the --reg command
+    # create parser for the re command
     parser_re = subparsers.add_parser(
         "re", help="Re-map project resources with regular expressions"
     )
+    parser_re.add_argument("pattern", type=str)
+    parser_re.add_argument("replace", type=str)
     parser_re.add_argument("-o", "--out", help="Specify the output file", required=True)
 
-    # parser_list = subparsers.add_parser("list",
-    #     help="List all of the resources and its associated instruments",
-
-    parser.add_argument(
-        "--list",
+    # subcommand to list resources
+    parser_list = subparsers.add_parser(
+        "list",
         help="List all of the resources and its associated instruments",
-        action="store_true",
     )
 
-    cli = validate_cli(parser.parse_args())
+    return validate_cli(parser.parse_args())
 
-    config = LMMSRC.default_path()
 
-    if cli.config is not None:
-        config = Path(cli.config)
+def main():
+    cli = build_cli()
+    # config = LMMSRC.default_path()
 
-    if not config.exists():
-        print("ERROR: could not find .lmmsrc.xml in your user directory")
-        sys.exit(1)
+    # if cli.config is not None:
+    #     print("INFO: Using user-provided lmmsrc override")
+    #     config = Path(cli.config)
 
-    lmmsrc = LMMSRC(config)
+    # if not config.exists():
+    #     print("ERROR: Could not find .lmmsrc.xml in your user directory")
+    #     sys.exit(1)
 
-    mmp = read_xml("./test/80's.mmpz")
+    # TODO
+    # lmmsrc = LMMSRC(config)
+
+    mmp = read_xml(cli.path)
 
     remapper = Remapper(mmp)
 
-    remapper.list_mappings()
+    # if cli.auto:
+    #     alias_resources(remapper, lmmsrc)
 
-    print("Writing out lmms file...")
-    write_mmp(mmp, "test.mmpz")
+    if cli.mode == "list":
+        print("INFO: Listing all resources and its references\n")
+        remapper.list_mappings()
+
+        sys.exit(0)
+
+    if cli.mode == "match":
+        remap_match(remapper, cli.match, cli.replace)
+        write_mmp(mmp, cli.out)
+
+        sys.exit(0)
+
+    if cli.mode == "re":
+        remap_regex(remapper, cli.pattern, cli.replace)
+        write_mmp(mmp, cli.out)
+
+        sys.exit(0)
+
+    # TODO: implement other interface
+    print("nothing to do...")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    main()

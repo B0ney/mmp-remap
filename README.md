@@ -23,7 +23,7 @@ CLI tool to re-map paths in LMMS projects.
     - Vestige
 
 # How to Use
-Fist list out the resources:
+First list out the resources:
 
 ```shell
 python mmpa.py ./project.mmpz list

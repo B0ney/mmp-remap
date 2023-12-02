@@ -59,7 +59,7 @@ def write_mmp(xml: ET.ElementTree, path: str):
     if extension == "mmpz":
         with open(path, "wb") as file:
             data = ET.tostring(xml.getroot())
-            size = int.to_bytes(len(data), 4, byteorder="little")
+            size = int.to_bytes(len(data), 4, byteorder="big")
 
             file.write(size)
             file.write(zlib.compress(data))

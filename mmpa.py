@@ -351,13 +351,13 @@ def build_cli() -> arg.Namespace:
     #     help="Preserve file metadata in mmp",
     #     action="store_true"
     # )
-    parser.add_argument(
-        "-a",
-        "--auto",
-        help="Automatically alias absolute paths if they can be located with lmmsrc",
-        action="store_true",
-        default=False,
-    )
+    # parser.add_argument(
+    #     "-a",
+    #     "--auto",
+    #     help="Automatically alias absolute paths if they can be located with lmmsrc",
+    #     action="store_true",
+    #     default=False,
+    # )
 
     subparsers = parser.add_subparsers(
         title="subcommands",

@@ -37,14 +37,11 @@ XPATH_ATTRS = [SRC_XPATH, VESTIGE_XPATH]
 def error(s: str):
     print(f"\nERROR: {s}")
 
-
 def info(s: str):
     print(f"INFO: {s}")
 
-
 def hint(s: str):
     print(f"\nHINT: {s}")
-
 
 def warn(s: str):
     print(f"WARN: {s}")

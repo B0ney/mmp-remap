@@ -34,6 +34,22 @@ VESTIGE_XPATH = (".//vestige", "plugin")
 XPATH_ATTRS = [SRC_XPATH, VESTIGE_XPATH]
 
 
+def error(s: str):
+    print(f"\nERROR: {s}")
+
+
+def info(s: str):
+    print(f"INFO: {s}")
+
+
+def hint(s: str):
+    print(f"\nHINT: {s}")
+
+
+def warn(s: str):
+    print(f"WARN: {s}")
+
+
 def read_xml(path: str) -> Optional[ET.ElementTree]:
     """Read xml data from a generic LMMS datafile
     into an editable xml tree.
@@ -50,7 +66,7 @@ def read_xml(path: str) -> Optional[ET.ElementTree]:
                 return ET.parse(path)
 
             except ET.ParseError:
-                print("ERROR: Not a valid LMMS project file")
+                error("Not a valid LMMS project file")
                 return None
 
 
@@ -60,8 +76,8 @@ def save_mmp(xml: ET.ElementTree, path: str, always_overwrite: bool = False):
     """
 
     if Path(path).exists() and not always_overwrite:
-        if not input("Path already exists, overwrite? y/N: ").lower().startswith('y'):
-            print("INFO: Aborting")
+        if not input("Path already exists, overwrite? y/N: ").lower().startswith("y"):
+            info("Aborting")
             return
 
     extension = get_file_ext(path)
@@ -151,7 +167,7 @@ class LMMSRC:
         expanded = self.aliases().get(alias)
 
         if expanded is None:
-            print(f"Unknown alias '{alias}'")
+            warn(f"Unknown alias '{alias}'")
             return path
 
         return str(expanded.joinpath(resource))
@@ -220,13 +236,22 @@ def extension_is_allowed(
     allowed_extensions = get_allowed_extensions(get_file_ext(old_resource))
 
     if allowed_extensions is None:
-        print(f"ERROR: Could not find allowed extension for {old_resource}")
+        error(f"Could not find allowed extension for {old_resource}")
         return False
 
-    extension = get_file_ext(new_resource)
+    old_ext = get_file_ext(old_resource)
+    new_ext = get_file_ext(new_resource)
 
-    if extension not in allowed_extensions:
-        print(f"ERROR: Resource can not be a '{extension}'")
+    if new_ext not in allowed_extensions:
+        if new_ext == "":
+            error("Resource can't have an empty extension.")
+            hint(
+                f"Your new resource must have a file extension: \n e.g. {allowed_extensions}"
+            )
+        else:
+            error(f"Resource can't be remapped from '{old_ext}' to '{new_ext}'.")
+            hint(f"Allowed extensions: {allowed_extensions}")
+
         return False
 
     return True
@@ -267,9 +292,9 @@ class Remapper:
             return
 
         if self.__dataset.get(resource) is None:
-            self.__dataset[resource] = [instr]
-        else:
-            self.__dataset[resource].append(instr)
+            self.__dataset[resource] = []
+
+        self.__dataset[resource].append(instr)
 
     def list_mappings(self):
         """List all of the resources and its associated instruments"""
@@ -291,7 +316,7 @@ class Remapper:
         instruments = self.__dataset.get(old_resource)
 
         if instruments is None:
-            print(f"ERROR: key '{old_resource}' not found")
+            error(f"key '{old_resource}' not found")
             return False
 
         for instrument in instruments:
@@ -306,13 +331,17 @@ class Remapper:
 def remap_index(remapper: Remapper, index: int, new_resource: str) -> bool:
     """Remaps a single resource from a given index"""
 
+    if index == 0:
+        info("Changing index '0' to '1'")
+        index = 1
+
     resource = remapper.get_resource(index - 1)
 
     if resource is None:
-        print("ERROR: Resource does not exist with the provided index")
+        error("Resource does not exist with the provided index")
         return False
 
-    print(f"INFO: Remapping [{index}] '{resource}' -> '{new_resource}'...")
+    info(f"Remapping [{index}] '{resource}' -> '{new_resource}'...")
     return remapper.remap_resource(resource, new_resource)
 
 
@@ -358,17 +387,19 @@ def alias_resources(remapper: Remapper, lmmsrc: LMMSRC):
 
 
 def get_file_ext(path: str) -> str:
+    """Get the file extension of a path"""
+
     return Path(path).suffix.strip(".").lower()
 
 
 def validate_cli(cli: arg.Namespace) -> arg.Namespace:
     if not cli.path.exists():
-        print(f"ERROR: path '{cli.path}' does not exist")
+        error(f"path '{cli.path}' does not exist")
         sys.exit(1)
 
     if cli.config is not None:
         if not Path(cli.config).exists():
-            print("ERROR: lmmsrc path override does not exist")
+            error("lmmsrc path override does not exist")
             sys.exit(1)
 
     return cli
@@ -378,7 +409,7 @@ def build_cli() -> arg.Namespace:
     parser = arg.ArgumentParser()
 
     parser.add_argument("path", type=Path, help="Path to LMMS project file")
-    parser.add_argument("-c", "--config", help="Override default lmmsrc path file")
+    parser.add_argument("-c", "--config", help="Override lmmsrc path")
     # parser.add_argument(
     #     "-p",
     #     "--preserve",
@@ -394,43 +425,43 @@ def build_cli() -> arg.Namespace:
     # )
 
     subparsers = parser.add_subparsers(
-        title="subcommands",
-        description="For when you need to do something quick",
-        help="additional help",
+        title="Subcommands",
+        description="Possible operations",
+        help="Additional help",
         required=False,
         dest="mode",
     )
 
     # create parser for the "match" subcommand
-    parser_match = subparsers.add_parser(
-        "match", help="Re-map project resources with string matching"
+    cmd_match = subparsers.add_parser(
+        "match", help="Re-map project resources with string matching."
     )
-    parser_match.add_argument("match", type=str)
-    parser_match.add_argument("replace", type=str)
-    parser_match.add_argument(
-        "-o", "--out", help="Specify the output file", required=True
+    cmd_match.add_argument("match", type=str, help="String to match against.")
+    cmd_match.add_argument("replace", type=str, help="New resource to replace.")
+    cmd_match.add_argument(
+        "-o", "--out", help="Specify the output file.", required=True
     )
 
-    # create parser for the re command
-    parser_re = subparsers.add_parser(
-        "re", help="Re-map project resources with regular expressions"
+    # Create parser for the re command
+    cmd_re = subparsers.add_parser(
+        "re", help="Re-map project resources with regular expressions."
     )
-    parser_re.add_argument("pattern", type=str)
-    parser_re.add_argument("replace", type=str)
-    parser_re.add_argument("-o", "--out", help="Specify the output file", required=True)
+    cmd_re.add_argument("pattern", type=str, help="Regex pattern to match against.")
+    cmd_re.add_argument("replace", type=str, help="New resource to replace.")
+    cmd_re.add_argument("-o", "--out", help="Specify the output file.", required=True)
 
-    # create parser for the idx command
-    parser_idx = subparsers.add_parser("idx", help="Re-map a single resource ")
-    parser_idx.add_argument("index", type=int)
-    parser_idx.add_argument("replace", type=str)
-    parser_idx.add_argument(
-        "-o", "--out", help="Specify the output file", required=True
+    # Create parser for the idx command
+    cmd_idx = subparsers.add_parser(
+        "idx", help="Re-map a single resource specified with an index."
     )
+    cmd_idx.add_argument("index", type=int, help="Index of resource.")
+    cmd_idx.add_argument("replace", type=str, help="New resource to replace.")
+    cmd_idx.add_argument("-o", "--out", help="Specify the output file.", required=True)
 
     # Subcommand to list resources
     parser_list = subparsers.add_parser(
         "list",
-        help="List all of the resources and its associated instruments",
+        help="List all of the resources and the number of instruments that reference it.",
     )
 
     return validate_cli(parser.parse_args())
@@ -441,11 +472,11 @@ def main():
     # config = LMMSRC.default_path()
 
     # if cli.config is not None:
-    #     print("INFO: Using user-provided lmmsrc override")
+    #     info("Using user-provided lmmsrc override")
     #     config = Path(cli.config)
 
     # if not config.exists():
-    #     print("ERROR: Could not find .lmmsrc.xml in your user directory")
+    #     error("Could not find .lmmsrc.xml in your user directory")
     #     sys.exit(1)
 
     # TODO
@@ -462,7 +493,7 @@ def main():
     #     alias_resources(remapper, lmmsrc)
 
     if cli.mode == "list":
-        print("INFO: Listing all resources and its references\n")
+        info("Listing all resources and its references\n")
         remapper.list_mappings()
 
         sys.exit(0)
@@ -470,18 +501,24 @@ def main():
     if cli.mode == "match":
         if remap_match(remapper, cli.match, cli.replace):
             save_mmp(mmp, cli.out)
+        else:
+            print("\nNothing was changed...")
 
         sys.exit(0)
 
     if cli.mode == "re":
         if remap_regex(remapper, cli.pattern, cli.replace):
             save_mmp(mmp, cli.out)
+        else:
+            print("\nNothing was changed...")
 
         sys.exit(0)
 
     if cli.mode == "idx":
         if remap_index(remapper, cli.index, cli.replace):
             save_mmp(mmp, cli.out)
+        else:
+            print("\nNothing was changed...")
 
         sys.exit(0)
 

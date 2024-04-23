@@ -34,9 +34,9 @@ VESTIGE_XPATH = (".//vestige", "plugin")
 XPATH_ATTRS = [SRC_XPATH, VESTIGE_XPATH]
 
 
-def read_xml(path: str) -> ET.ElementTree:
+def read_xml(path: str) -> Optional[ET.ElementTree]:
     """Read xml data from a generic LMMS datafile
-    into an editable xml tree
+    into an editable xml tree.
     """
 
     with open(path, "rb") as file:
@@ -46,10 +46,15 @@ def read_xml(path: str) -> ET.ElementTree:
             return ET.ElementTree(xml_data)
 
         except zlib.error:
-            return ET.parse(path)
+            try:
+                return ET.parse(path)
+
+            except ET.ParseError:
+                print("ERROR: Not a valid LMMS project file")
+                return None
 
 
-def write_mmp(xml: ET.ElementTree, path: str):
+def save_mmp(xml: ET.ElementTree, path: str):
     """Output mmp xml data to a file.
     Will compress if the file extension is .mmpz
     """
@@ -237,10 +242,14 @@ class Remapper:
 
         return list(self.__dataset.keys())
 
-    def get_resource(self, index: int) -> str:
+    def get_resource(self, index: int) -> Optional[str]:
         """Provides a resource given an index"""
+        resources = self.get_resources()
 
-        return self.get_resources()[index]
+        if index >= len(resources) or index < 0:
+            return None
+
+        return resources[index]
 
     def append_or_update(self, instr: Instrument):
         resource = instr.get_resource()
@@ -259,57 +268,74 @@ class Remapper:
         """List all of the resources and its associated instruments"""
 
         for index, (resource, instruments) in enumerate(self.__dataset.items()):
-            print(f"[{index}]", resource)
+            print(f"[{index + 1}]", resource)
 
             plural = ""
             if len(instruments) > 1:
                 plural = "S"
             print(f"        {len(instruments)} - REFERENCE{plural}\n")
 
-
-    def remap_resource(self, resource: str, new_resource: str):
+    def remap_resource(self, old_resource: str, new_resource: str):
         """Remaps a given resource in the dataset"""
 
-        if not extension_is_allowed(resource, new_resource):
+        if not extension_is_allowed(old_resource, new_resource):
             return
 
-        instruments = self.__dataset.get(resource)
+        instruments = self.__dataset.get(old_resource)
 
         if instruments is None:
-            print(f"ERROR: key '{resource}' not found")
+            print(f"ERROR: key '{old_resource}' not found")
             return
 
         for instrument in instruments:
             instrument.update_resource(new_resource)
 
         # Use updated resource as the new key.
-        self.__dataset[new_resource] = self.__dataset.pop(resource)
+        self.__dataset[new_resource] = self.__dataset.pop(old_resource)
 
 
-def remap_index(remapper: Remapper, index: int, new_resource: str):
+def remap_index(remapper: Remapper, index: int, new_resource: str) -> bool:
     """Remaps a single resource from a given index"""
 
-    resource = remapper.get_resource(index)
+    resource = remapper.get_resource(index - 1)
+
+    if resource is None:
+        print("ERROR: Resource does not exist with the provided index")
+        return False
+
     remapper.remap_resource(resource, new_resource)
 
+    return True
 
-def remap_match(remapper: Remapper, to_match: str, replace: str):
+
+def remap_match(remapper: Remapper, to_match: str, replace: str) -> bool:
     """Finds and replaces all matching strings for all resources"""
+
+    remapped = 0
 
     for resource in remapper.get_resources():
         if to_match in resource:
             new_resource = resource.replace(to_match, replace)
             remapper.remap_resource(resource, new_resource)
+            remapped += 1
+
+    return remapped > 0
 
 
-def remap_regex(remapper: Remapper, pattern: str, replace: str):
+def remap_regex(remapper: Remapper, pattern: str, replace: str) -> bool:
     """Use regex to replace a pattern for all resources"""
+
+    remapped = 0
 
     for resource in remapper.get_resources():
         new_resource = re.sub(pattern, replace, resource)
 
         if new_resource != resource:
             remapper.remap_resource(resource, new_resource)
+
+            remapped += 1
+
+    return remapped > 0
 
 
 # TODO
@@ -329,7 +355,7 @@ def get_file_ext(path: str) -> str:
 
 def validate_cli(cli: arg.Namespace) -> arg.Namespace:
     if not cli.path.exists():
-        print(f"ERROR: path '{cli.path}' file does not exist")
+        print(f"ERROR: path '{cli.path}' does not exist")
         sys.exit(1)
 
     if cli.config is not None:
@@ -385,7 +411,15 @@ def build_cli() -> arg.Namespace:
     parser_re.add_argument("replace", type=str)
     parser_re.add_argument("-o", "--out", help="Specify the output file", required=True)
 
-    # subcommand to list resources
+    # create parser for the idx command
+    parser_idx = subparsers.add_parser("idx", help="Re-map a single resource ")
+    parser_idx.add_argument("index", type=int)
+    parser_idx.add_argument("replace", type=str)
+    parser_idx.add_argument(
+        "-o", "--out", help="Specify the output file", required=True
+    )
+
+    # Subcommand to list resources
     parser_list = subparsers.add_parser(
         "list",
         help="List all of the resources and its associated instruments",
@@ -411,6 +445,9 @@ def main():
 
     mmp = read_xml(cli.path)
 
+    if mmp is None:
+        sys.exit(1)
+
     remapper = Remapper(mmp)
 
     # if cli.auto:
@@ -423,14 +460,20 @@ def main():
         sys.exit(0)
 
     if cli.mode == "match":
-        remap_match(remapper, cli.match, cli.replace)
-        write_mmp(mmp, cli.out)
+        if remap_match(remapper, cli.match, cli.replace):
+            save_mmp(mmp, cli.out)
 
         sys.exit(0)
 
     if cli.mode == "re":
-        remap_regex(remapper, cli.pattern, cli.replace)
-        write_mmp(mmp, cli.out)
+        if remap_regex(remapper, cli.pattern, cli.replace):
+            save_mmp(mmp, cli.out)
+
+        sys.exit(0)
+
+    if cli.mode == "idx":
+        if remap_index(remapper, cli.index, cli.replace):
+            save_mmp(mmp, cli.out)
 
         sys.exit(0)
 

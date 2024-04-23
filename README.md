@@ -36,12 +36,33 @@ There are 2 ways resources can be re-mapped:
 * With string matching
 * With fancy regular expressions
 
-<!-- ### Re-map with an Index
+### Re-map with an Index
 The simplest method if you don't want to re-map that many resources.
 
+First we list out the instruments:
 ```shell
+python ./mmpa.py ./test.mmpz list
+```
 
-``` -->
+```
+INFO: Listing all resources and its references
+
+[1] drums/snare01.ogg
+        1 - REFERENCE
+
+[2] drums/bassdrum_acoustic01.ogg
+        1 - REFERENCE
+
+[3] drums/hihat_foot_pedal01.ogg
+        1 - REFERENCE
+
+[4] drums/kick_hard01.ogg
+        1 - REFERENCE
+```
+
+```shell
+python mmpa.py ./test.mmpz idx 1 "drums/hihat_foot_pedal01.ogg" -o "test2.mmpz"
+```
 
 ### Match based re-mapping
 Might be all you need when re-mapping multiple resources.

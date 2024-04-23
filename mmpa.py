@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 import zlib
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 
 
@@ -20,6 +20,12 @@ from pathlib import Path
 AUDIO_EXT = ["wav", "ogg", "mp3", "flac", "aiff", "ds", "spx", "voc", "aif", "au"]
 SOUNDFONT_EXT = ["sf2", "sf3"]
 VST_EXT = ["dll", "exe", ".so"]
+
+EXTENSIONS = {
+    "vst": VST_EXT,
+    "sf": SOUNDFONT_EXT,
+    "sample": AUDIO_EXT,
+}
 
 # Aliases used in LMMS projects
 USER_PROJECTS = "userprojects"
@@ -242,9 +248,8 @@ def extension_is_allowed(
     if new_ext not in allowed_extensions:
         if new_ext == "":
             error("Resource can't have an empty extension.")
-            hint(
-                f"Your new resource must have a file extension: \n e.g. {allowed_extensions}"
-            )
+            hint(f"Your new resource must have a file extension: \
+                \n  e.g. {allowed_extensions}")
         else:
             error(f"Resource can't be remapped from '{old_ext}' to '{new_ext}'.")
             hint(f"Allowed extensions: {allowed_extensions}")
@@ -293,10 +298,14 @@ class Remapper:
 
         self.__dataset[resource].append(instr)
 
-    def list_mappings(self):
+    def list_mappings(self, formats: Optional[List[str]] = None):
         """List all of the resources and its associated instruments"""
 
         for index, (resource, instruments) in enumerate(self.__dataset.items()):
+            if formats is not None:
+                if get_file_ext(resource) not in all_extensions(formats):
+                    continue
+
             print(f"[{index + 1}]", resource)
 
             plural = ""
@@ -323,6 +332,20 @@ class Remapper:
         self.__dataset[new_resource] = self.__dataset.pop(old_resource)
 
         return True
+
+
+def all_extensions(kind: List[str]) -> List[str]:
+    ''' List all extensions by their kind.'''
+
+    all_extensions: List[str] = []
+
+    for format in kind:
+        extensions = EXTENSIONS.get(format)
+
+        if extensions is not None:
+            all_extensions += extensions
+
+    return all_extensions
 
 
 def remap_index(remapper: Remapper, index: int, new_resource: str) -> bool:
@@ -402,7 +425,7 @@ def validate_cli(cli: arg.Namespace) -> arg.Namespace:
     return cli
 
 
-def build_cli() -> arg.Namespace:
+def build_cli() -> Tuple[arg.Namespace, str]:
     parser = arg.ArgumentParser()
 
     parser.add_argument("path", type=Path, help="Path to LMMS project file")
@@ -456,16 +479,18 @@ def build_cli() -> arg.Namespace:
     cmd_idx.add_argument("-o", "--out", help="Specify the output file.", required=True)
 
     # Subcommand to list resources
-    parser_list = subparsers.add_parser(
+    cmd_list = subparsers.add_parser(
         "list",
         help="List all of the resources and the number of instruments that reference it.",
     )
+    cmd_list.add_argument("-f", "--filter", nargs="+", choices=["sample", "vst", "sf"], help="what")
 
-    return validate_cli(parser.parse_args())
+    # cmd_list.add_subparsers()
+    return (validate_cli(parser.parse_args()), parser.format_help())
 
 
 def main():
-    cli = build_cli()
+    cli, help = build_cli()
     # config = LMMSRC.default_path()
 
     # if cli.config is not None:
@@ -491,7 +516,8 @@ def main():
 
     if cli.mode == "list":
         info("Listing all resources and its references\n")
-        remapper.list_mappings()
+        # print(cli.filter)
+        remapper.list_mappings(cli.filter)
 
         sys.exit(0)
 
@@ -520,7 +546,11 @@ def main():
         sys.exit(0)
 
     # TODO: implement other interface
-    print("nothing to do...")
+    # print("nothing to do...")
+
+    info("Listing all resources and its references\n")
+    remapper.list_mappings()
+    print(help)
 
 
 if __name__ == "__main__":

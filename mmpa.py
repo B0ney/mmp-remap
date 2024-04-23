@@ -248,8 +248,9 @@ def extension_is_allowed(
     if new_ext not in allowed_extensions:
         if new_ext == "":
             error("Resource can't have an empty extension.")
-            hint(f"Your new resource must have a file extension: \
-                \n  e.g. {allowed_extensions}")
+            hint(
+                f"Your new resource must have a file extension: \n  e.g. {allowed_extensions}"
+            )
         else:
             error(f"Resource can't be remapped from '{old_ext}' to '{new_ext}'.")
             hint(f"Allowed extensions: {allowed_extensions}")
@@ -335,7 +336,7 @@ class Remapper:
 
 
 def all_extensions(kind: List[str]) -> List[str]:
-    ''' List all extensions by their kind.'''
+    """List all extensions by their kind."""
 
     all_extensions: List[str] = []
 
@@ -483,7 +484,9 @@ def build_cli() -> Tuple[arg.Namespace, str]:
         "list",
         help="List all of the resources and the number of instruments that reference it.",
     )
-    cmd_list.add_argument("-f", "--filter", nargs="+", choices=["sample", "vst", "sf"], help="what")
+    cmd_list.add_argument(
+        "-f", "--filter", nargs="+", choices=["sample", "vst", "sf"], help="what"
+    )
 
     # cmd_list.add_subparsers()
     return (validate_cli(parser.parse_args()), parser.format_help())
@@ -515,8 +518,12 @@ def main():
     #     alias_resources(remapper, lmmsrc)
 
     if cli.mode == "list":
-        info("Listing all resources and its references\n")
-        # print(cli.filter)
+        if cli.filter is None:
+            info("Listing all resources and its references\n")
+        else:
+            kind = list(set(cli.filter))
+            info(f"Listing resources and its references ({kind})\n")
+
         remapper.list_mappings(cli.filter)
 
         sys.exit(0)

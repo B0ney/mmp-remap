@@ -54,10 +54,15 @@ def read_xml(path: str) -> Optional[ET.ElementTree]:
                 return None
 
 
-def save_mmp(xml: ET.ElementTree, path: str):
+def save_mmp(xml: ET.ElementTree, path: str, always_overwrite: bool = False):
     """Output mmp xml data to a file.
-    Will compress if the file extension is .mmpz
+    Will compress if the file extension is a `.mmpz`
     """
+
+    if Path(path).exists() and not always_overwrite:
+        if not input("Path already exists, overwrite? y/N: ").lower().startswith('y'):
+            print("INFO: Aborting")
+            return
 
     extension = get_file_ext(path)
 
@@ -70,6 +75,8 @@ def save_mmp(xml: ET.ElementTree, path: str):
             file.write(zlib.compress(data))
     else:
         xml.write(path, encoding="UTF-8")
+
+    print(f"Successfully written to '{path}'")
 
 
 # TODO: what if the user doesn't have an lmmsrc file?
@@ -213,7 +220,7 @@ def extension_is_allowed(
     allowed_extensions = get_allowed_extensions(get_file_ext(old_resource))
 
     if allowed_extensions is None:
-        print("ERROR: Could not find allowed extension for ", old_resource)
+        print(f"ERROR: Could not find allowed extension for {old_resource}")
         return False
 
     extension = get_file_ext(new_resource)
@@ -275,23 +282,25 @@ class Remapper:
                 plural = "S"
             print(f"        {len(instruments)} - REFERENCE{plural}\n")
 
-    def remap_resource(self, old_resource: str, new_resource: str):
-        """Remaps a given resource in the dataset"""
+    def remap_resource(self, old_resource: str, new_resource: str) -> bool:
+        """Remap all instruments with a matching resource to a different resource"""
 
         if not extension_is_allowed(old_resource, new_resource):
-            return
+            return False
 
         instruments = self.__dataset.get(old_resource)
 
         if instruments is None:
             print(f"ERROR: key '{old_resource}' not found")
-            return
+            return False
 
         for instrument in instruments:
             instrument.update_resource(new_resource)
 
         # Use updated resource as the new key.
         self.__dataset[new_resource] = self.__dataset.pop(old_resource)
+
+        return True
 
 
 def remap_index(remapper: Remapper, index: int, new_resource: str) -> bool:
@@ -303,9 +312,8 @@ def remap_index(remapper: Remapper, index: int, new_resource: str) -> bool:
         print("ERROR: Resource does not exist with the provided index")
         return False
 
-    remapper.remap_resource(resource, new_resource)
-
-    return True
+    print(f"INFO: Remapping [{index}] '{resource}' -> '{new_resource}'...")
+    return remapper.remap_resource(resource, new_resource)
 
 
 def remap_match(remapper: Remapper, to_match: str, replace: str) -> bool:

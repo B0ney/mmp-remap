@@ -210,6 +210,9 @@ class Instrument:
     def name(self) -> str:
         return self.elem.tag
 
+    def __repr__(self) -> str:
+        return self.name()
+
 
 def get_allowed_extensions(ext: str) -> Optional[List[str]]:
     filters = [
@@ -313,6 +316,11 @@ class Remapper:
             if len(instruments) > 1:
                 plural = "S"
             print(f"        {len(instruments)} - REFERENCE{plural}\n")
+
+    def dataset(self) -> Dict[str, List[Instrument]]:
+        """Obtain a shallow copy of the dataset"""
+
+        return self.__dataset.copy()
 
     def remap_resource(self, old_resource: str, new_resource: str) -> bool:
         """Remap all instruments with a matching resource to a different resource"""
